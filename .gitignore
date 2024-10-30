@@ -1,0 +1,5 @@
+.idea/
+.zig-cache/
+jsonParser
+test.json
+zig-out/
