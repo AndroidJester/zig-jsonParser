@@ -1,30 +1,31 @@
 const std = @import("std");
+const Parser = @import("./parser.zig");
+const File = std.fs.File;
+const arguments = std.process.argsAlloc;
 const gpa = std.heap.GeneralPurposeAllocator(.{});
-const Tokenizer = @import("./tokenizer.zig");
 pub fn main() !void {
-    var gpa_init = gpa{};
-    const alloc = gpa_init.allocator();
-    defer _ = gpa_init.deinit();
-
-    const exit = std.process.exit;
-
-    const args = try std.process.argsAlloc(alloc);
-    defer std.process.argsFree(alloc, args);
-
-    std.debug.print("Args: {s}\n\n", .{args});
-
-    if (args.len < 2) {
-        _ = try std.io.getStdOut().write("The args are less");
-        exit(1);
+    var gpAlloc = gpa.init;
+    const alloc = gpAlloc.allocator();
+    defer {
+        const check = gpAlloc.deinit();
+        switch (check) {
+            .ok => {
+                std.debug.print("[++] No Leaks Detected\n", .{});
+            },
+            .leak => {
+                std.debug.print("[++] Memory Leak Detected\n", .{});
+            },
+        }
     }
-
-    const file = try std.fs.cwd().openFile(args[1], .{
-        .mode = .read_only,
-    });
-    const meta = try file.metadata();
-    const fileData = try file.readToEndAlloc(alloc, meta.size());
-    defer alloc.free(fileData);
-    var tokenizer = Tokenizer.Tokenizer.getData(fileData, alloc);
-    try tokenizer.tokenize();
-    tokenizer.deinit();
+    const args = try arguments(alloc);
+    defer alloc.free(args);
+    std.debug.print("[++] Program Start: Successful\n", .{});
+    std.debug.print("[++] Arguments: {s}\n", .{args});
+    const jsonFile = try std.fs.cwd().openFile(args[1], File.OpenFlags{ .mode = .read_only });
+    const fileMeta = try jsonFile.metadata();
+    const fileData = try jsonFile.readToEndAlloc(alloc, fileMeta.size());
+    var parser = try Parser.Parser.init(alloc, fileData);
+    defer parser.deinit();
+    const hashmap = try parser.parse();
+    std.debug.print("Parsed Data: {any}", .{hashmap.keys()});
 }

@@ -1,5 +1,7 @@
-.idea/
-.zig-cache/
-jsonParser
-test.json
+zig-cache/
 zig-out/
+build/
+build-*/
+docgen_tmp/
+test.json
+.zig-cache/
