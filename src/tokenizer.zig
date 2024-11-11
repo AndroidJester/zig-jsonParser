@@ -16,7 +16,8 @@ pub const TokenType = enum {
     Float,
     Comma,
     NewLine,
-    Boolean
+    Boolean,
+    Null,
     // Comment,
 };
 
@@ -32,20 +33,17 @@ pub const Token = struct {
     }
 };
 
-fn chrcmp(a: u8, b:u8) bool {
+fn chrcmp(a: u8, b: u8) bool {
     return a == b;
 }
 
-fn chrncmp(a: u8, b:u8) bool {
+fn strcmp(a: []u8, b: []const u8) bool {
+    return eql(u8, a, b);
+}
+
+fn chrncmp(a: u8, b: u8) bool {
     return a != b;
 }
-
-
-fn strncmp(a: u8, b:u8) bool {
-    return !(eql(u8, a, b));
-}
-
-
 
 pub const Tokenizer = struct {
     alloc: Allocator = undefined,
@@ -54,7 +52,6 @@ pub const Tokenizer = struct {
     tokenVals: TokenList = undefined,
     data: []u8 = undefined,
     bufferList: ArrayList(ArrayList(u8)) = undefined,
-
 
     pub fn getData(data: []u8, alloc: Allocator) Tokenizer {
         return .{
@@ -72,10 +69,11 @@ pub const Tokenizer = struct {
         self.bufferList.deinit();
     }
 
-
     fn advance(self: *Tokenizer) u8 {
         self.position += 1;
-        self.currentValue = self.data[self.position];
+        if(self.position < self.data.len) {
+            self.currentValue = self.data[self.position];
+        }
         return self.currentValue;
     }
 
@@ -85,109 +83,108 @@ pub const Tokenizer = struct {
 
     fn tokenizeNumber(self: *Tokenizer) !void {
         var val = self.currentValue;
-        var buffer = ArrayList(u8).init(self.alloc);
+        var buffer = ArrayList(u8).init(std.heap.page_allocator);
         try self.bufferList.append(buffer);
-        // std.debug.print("Position: {d}\nCurrent Value: {c}\n", .{self.position, self.currentValue});
-        std.debug.print("[START] Number Tokenizing\n\n", .{});
-        std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
-        if(val == '-') {
+        if (val == '-') {
             try buffer.append(val);
         }
-        while(chrncmp(val, ',') and chrncmp(self.currentValue, '\n')) {
-            std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
-            // std.debug.print("Position: {d}\nCurrent Value: {c}\n", .{self.position, self.currentValue});
+        while (chrncmp(val, ',') and chrncmp(self.currentValue, '\n')) {
             try buffer.append(val);
             val = self.advance();
         }
 
-        if(contains(u8, buffer.items, 1, ".")) {
+        if (contains(u8, buffer.items, 1, ".")) {
             try self.add(.Float, buffer.items);
         } else {
             try self.add(.Number, buffer.items);
         }
-        std.debug.print("[END] Number Tokenizing\n\n", .{});
-
     }
 
     fn tokenizeString(self: *Tokenizer) !void {
         var val = self.advance();
-        var buffer = ArrayList(u8).init(self.alloc);
+        var buffer = ArrayList(u8).init(std.heap.page_allocator);
         try self.bufferList.append(buffer);
-        std.debug.print("[START]String Tokenizing\n\n", .{});
-        std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
-        while(chrncmp(val, '"')) {
-            std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
+        while (chrncmp(val, '"')) {
             try buffer.append(val);
             val = self.advance();
         }
-        val = self.advance();
         try self.add(.String, buffer.items);
-        std.debug.print("[END]String Tokenizing\n\n", .{});
-
     }
 
     fn tokenizeBool(self: *Tokenizer) !void {
         var val = self.currentValue;
-        var buffer = ArrayList(u8).init(self.alloc);
+        var buffer = ArrayList(u8).init(std.heap.page_allocator);
         try self.bufferList.append(buffer);
-        std.debug.print("[START] Boolean Tokenizing\n\n", .{});
-        std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
 
-        while(chrncmp(val, ',') and chrncmp(val, '\n')) {
-            std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
+        while (chrncmp(val, ',') and chrncmp(val, '\n')) {
             try buffer.append(val);
             val = self.advance();
         }
+
         try self.add(.Boolean, buffer.items);
-        std.debug.print("[END] Boolean Tokenizing End\n\n", .{});
 
     }
 
     pub fn tokenize(self: *Tokenizer) !TokenList {
-        while(self.position < self.data.len) {
-            std.debug.print("Position: {d}\nCurrent Value: {c}\n\n", .{self.position, self.currentValue});
+        while (self.position < self.data.len) {
             const res: []u8 = self.data[self.position..(self.position + 1)];
-            if(ascii.isDigit(self.currentValue) or chrcmp(self.currentValue, '-')) {
+            if (ascii.isDigit(self.currentValue) or chrcmp(self.currentValue, '-')) {
                 try self.tokenizeNumber();
-            } else if(chrcmp(self.currentValue, '"')) {
+                continue;
+            } else if (chrcmp(self.currentValue, '"')) {
                 try self.tokenizeString();
-            } else if(chrcmp('t', self.currentValue) or chrcmp('f', self.currentValue)) {
+            } else if (chrcmp('t', self.currentValue) or chrcmp('f', self.currentValue)) {
                 try self.tokenizeBool();
-            }  else {
-                switch (self.currentValue) {
-                    '{' => {
-                        try self.add(.LeftBrace, res);
-                    },
-                    '}' => {
-                        try self.add(.RightBrace, res);
-                        break;
-                    },
-                    ':' => {
-                        try self.add(.Colon, res);
-                    },
+            } else {
+            switch (self.currentValue) {
+                '{' => {
+                    try self.add(.LeftBrace, res);
+                },
+                '}' => {
+                    try self.add(.RightBrace, res);
+                },
+                ':' => {
+                    try self.add(.Colon, res);
+                },
 
-                    '[' => {
-                        try self.add(.ArrLeftBracket, res);
-                    },
-                    ']' => {
-                        try self.add(.ArrRightBracket, res);
-                    },
-
-                    ',' => {
-                        try self.add(.Comma, res);
-
-                    },
-                    '\n' => {
-                        try self.add(.NewLine, res);
-                    },
-                else => {}
+                '[' => {
+                    try self.add(.ArrLeftBracket, res);
+                },
+                ']' => {
+                    try self.add(.ArrRightBracket, res);
+                },
+                '\n' => {
+                    try self.add(.NewLine, res);
+                },
+                ',' => {
+                    try self.add(.Comma, res);
+                },
+                'n' => {
+                    var buffer = ArrayList(u8).init(std.heap.page_allocator);
+                   try self.bufferList.append(buffer);
+                    while(chrncmp(self.currentValue, ',')) {
+                        try buffer.append(self.currentValue);
+                        _ = self.advance();
+                    }
+                    std.debug.print("NULL: {s}\n", .{buffer.items});
+                    try self.add(.Null, buffer.items);
+                },
+                else => {
+                if(chrcmp(self.currentValue, '/')) {
+                    if(chrcmp(self.advance(), '/')) {
+                        while (self.currentValue != '\n') {
+                            _  = self.advance();
+                        }
+                    } else {
+                        std.process.exit(1);
+                    }
                 }
-                _ = self.advance();
-
+                },
             }
-
+            }
+            _ = self.advance();
         }
+
         return self.tokenVals;
     }
-
 };

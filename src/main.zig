@@ -15,17 +15,21 @@ pub fn main() !void {
             .leak => {
                 std.debug.print("[++] Memory Leak Detected\n", .{});
             },
+            },
         }
     }
-    const args = try arguments(alloc);
-    defer alloc.free(args);
+    const args = try arguments(std.heap.page_allocator);
+    // defer alloc.free(args);
     std.debug.print("[++] Program Start: Successful\n", .{});
     std.debug.print("[++] Arguments: {s}\n", .{args});
+    const jsonFile = try std.fs.cwd().openFile(args[1], File.OpenFlags{ .mode = .read_only });
     const jsonFile = try std.fs.cwd().openFile(args[1], File.OpenFlags{ .mode = .read_only });
     const fileMeta = try jsonFile.metadata();
     const fileData = try jsonFile.readToEndAlloc(alloc, fileMeta.size());
     var parser = try Parser.Parser.init(alloc, fileData);
     defer parser.deinit();
     const hashmap = try parser.parse();
-    std.debug.print("Parsed Data: {any}", .{hashmap.keys()});
+    _ = hashmap;
+    // std.debug.print("Parsed Data: {s}", .{hashmap.keys()});
 }
+

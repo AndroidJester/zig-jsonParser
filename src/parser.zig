@@ -12,13 +12,13 @@ const JsonUnionType = union(enum) {
     Array: []JsonUnionType,
     Number: i32,
     Float: f64,
+    Null: u8,
     Boolean: bool,
 };
 
 fn strcmp(a: []u8, b: []const u8) bool {
     return eql(u8, a, b);
 }
-
 
 pub const Parser = struct {
     position: usize = 0,
@@ -27,7 +27,6 @@ pub const Parser = struct {
     alloc: Tokenizer.Allocator = undefined,
     // jsonHashMap: HashMap,
     tokenizer: Tokenizer.Tokenizer = undefined,
-
 
     pub fn init(alloc: Tokenizer.Allocator, data: []u8) !Parser {
         var tokenizer = Tokenizer.Tokenizer.getData(data, alloc);
@@ -47,103 +46,98 @@ pub const Parser = struct {
 
     fn advance(self: *Parser) Token {
         self.position += 1;
-        self.current = self.tokenVals.items[self.position];
+        // std.debug.print("Current Position: {d}\nCurrent Token: {any}\n\n", .{self.position, self.current.type});
+        if((self.position) < (self.tokenVals.items.len)) {
+            self.current = self.tokenVals.items[self.position];
+        }
+        return self.current;
+    }
+    fn peek(self: *Parser) Token {
+        if((self.position + 1) < (self.tokenVals.items.len)) {
+            return self.tokenVals.items[self.position + 1];
+        }
         return self.current;
     }
 
     pub fn parseArray(self: *Parser, key: []u8, jsonHashMap: *HashMap) !void {
-        var currentVal = self.current;
-        switch (currentVal.type) {
-            .String => {
-                var arrayItems = Tokenizer.ArrayList(JsonUnionType).init(pga);
-                while (currentVal.type != .ArrRightBracket) {
-                    if(currentVal.type == .String) {
-                       try arrayItems.append(JsonUnionType{.String = currentVal.value});
-                        currentVal = self.advance();
-                    }
-                }
-                try jsonHashMap.put(key, .{.Array = arrayItems.items});
+        var arrayItems = Tokenizer.ArrayList(JsonUnionType).init(pga);
+        while (self.current.type != .ArrRightBracket) {
+            switch (self.current.type) {
+                .String => {
+                    try arrayItems.append(JsonUnionType{ .String = self.current.value });
 
-            },
-            .Float => {
-                var arrayItems = Tokenizer.ArrayList(JsonUnionType).init(self.alloc);
-                while (currentVal.type != .ArrRightBracket) {
-                    if(currentVal.type == .Float) {
-                        const number = try parseFloat(f64, currentVal.value);
-                        try arrayItems.append(JsonUnionType{ .Float = number });
-                        currentVal = self.advance();
-                    }
-                }
-                try jsonHashMap.put(key, .{.Array = arrayItems.items});
+                },
+                .Float => {
+                    const number = try parseFloat(f64, self.current.value);
+                    try arrayItems.append(JsonUnionType{ .Float = number });
+                },
+                .Number => {
+                    const number = try parseInt(i32, self.current.value, 10);
+                    try arrayItems.append(JsonUnionType{ .Number = number });
+                },
+                .Boolean => {
+                    try arrayItems.append(JsonUnionType{ .Boolean = strcmp(self.current.value, "true") });
+                },
+                else => {}
+            }
 
-            },
-            .Number => {
-                var arrayItems = Tokenizer.ArrayList(JsonUnionType).init(self.alloc);
-                while (currentVal.type != .ArrRightBracket) {
-                    if(currentVal.type == .Number) {
-                        const number = try parseInt(i32, currentVal.value, 10);
-
-                        try arrayItems.append(JsonUnionType{ .Number = number });
-                        currentVal = self.advance();
-                    }
-                }
-                try jsonHashMap.put(key, .{.Array = arrayItems.items});
-
-            },
-            .Boolean => {
-                var arrayItems = Tokenizer.ArrayList(JsonUnionType).init(self.alloc);
-                while (currentVal.type != .ArrRightBracket) {
-                    if(currentVal.type == .Boolean) {
-                        try arrayItems.append(JsonUnionType { .Boolean = strcmp(currentVal.value, "true") });
-                        currentVal = self.advance();
-                    }
-                }
-                try jsonHashMap.put(key, .{.Array = arrayItems.items});
-            },
-            else => {},
+            _ = self.advance();
         }
+        try jsonHashMap.put(key, .{ .Array = arrayItems.items });
     }
 
-
     pub fn parse(self: *Parser) !HashMap {
-        var jsonHashMap = HashMap.init(self.alloc);
+        var jsonHashMap = HashMap.init(pga);
         var key: []u8 = undefined;
-        var currentVal = self.current;
-        while (currentVal.type != .RightBrace) {
-                if(currentVal.type == .String) {
-                    key = currentVal.value;
-                    currentVal = self.advance();
-                    while (currentVal.type != .Comma) {
-                        std.debug.print("Current Position: {d}\nCurrent ValueType: {any}\nCurrent Value: {s}\n\n", .{self.position, currentVal.type, currentVal.value});
-                        switch (currentVal.type) {
-                            .String => {
-                                try jsonHashMap.put(key, .{ .String = currentVal.value });
-                            },
-                            .Float => {
-                                const number = try parseFloat(f64, currentVal.value);
-                                try jsonHashMap.put(key, .{.Float = number});
-                            },
-                            .Number => {
-                                const number = try parseInt(i32, currentVal.value, 10);
-                                try jsonHashMap.put(key, .{.Number = number});
-                            },
-                            .Boolean => {
-                                const truth: []const u8 = "true";
-                                try jsonHashMap.put(key, .{.Boolean = strcmp(currentVal.value, truth)});
-                            },
-                            .ArrLeftBracket => {
-                                currentVal = self.advance();
-                                try self.parseArray(key, &jsonHashMap);
-                            },
-                            .LeftBrace => {
-                                try jsonHashMap.put(key, .{.Map = try self.parse()});
-                            },
-                            else => {},
-                        }
-                        currentVal = self.advance();
+        _ = self.advance();
+        while (self.current.type != .RightBrace) {
+            if (self.current.type == .String) {
+                key = self.current.value;
+                while (self.advance().type != .Comma) {
+                    switch (self.current.type) {
+                        .String => {
+                            try jsonHashMap.put(key, .{ .String = self.current.value });
+                        },
+                        .Float => {
+                            const number = try parseFloat(f64, self.current.value);
+                            try jsonHashMap.put(key, .{ .Float = number });
+                        },
+                        .Number => {
+                            const number = try parseInt(i32, self.current.value, 10);
+                            try jsonHashMap.put(key, .{ .Number = number });
+                        },
+                        .Boolean => {
+                            const truth: []const u8 = "true";
+                            try jsonHashMap.put(key, .{ .Boolean = strcmp(self.current.value, truth) });
+                        },
+                        .Null => {
+                            try jsonHashMap.put(key, .{ .Null = 0 });
+                        },
+                        .ArrLeftBracket => {
+                            _ = self.advance();
+                            try self.parseArray(key, &jsonHashMap);
+                        },
+                        .LeftBrace => {
+                            try jsonHashMap.put(key, .{ .Map = try self.parse() });
+                        },
+                        else => {
+                            // std.debug.print("Invalid ValueType: {any}\n", .{self.current.type});
+                        },
                     }
-                    break;
+                    if(self.peek().type == .NewLine) {
+                        break;
+                    }
                 }
+                //     } else {
+        //         std.process.exit(1);
+        //     }
+        }
+            _ = self.advance();
+        }
+        std.debug.print("Json Length: {d}\n\n", .{jsonHashMap.keys().len});
+        std.debug.print("Key\t->\tValue\n", .{});
+        for (jsonHashMap.keys()) |value| {
+            std.debug.print("{s}: {any}\n\n", .{value, jsonHashMap.get(value)});
         }
 
         return jsonHashMap;
