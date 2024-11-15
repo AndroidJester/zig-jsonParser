@@ -1,0 +1,14 @@
+#+title: Zig Json Parser Attempt
+#+description: A simple CLI application that just parses json into their key value pairs to be used as a library as a simple json reader
+#+options: :toc:3
+* Introduction
+This program is a simple json parser used to learn about tokenization and handling allocators in Zig
+
+* Details
+Zig version used: 0.14.0-dev.2245+4fc295dc0
+* Build
+Simple run to build the executable
+#+begin_src shell
+  zig build -Drelease=true
+  mv zig-out/bin/jsonParser .
+#+end_src

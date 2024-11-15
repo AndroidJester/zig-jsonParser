@@ -71,7 +71,7 @@ pub const Tokenizer = struct {
 
     fn advance(self: *Tokenizer) u8 {
         self.position += 1;
-        if(self.position < self.data.len) {
+        if (self.position < self.data.len) {
             self.currentValue = self.data[self.position];
         }
         return self.currentValue;
@@ -92,7 +92,6 @@ pub const Tokenizer = struct {
             try buffer.append(val);
             val = self.advance();
         }
-
         if (contains(u8, buffer.items, 1, ".")) {
             try self.add(.Float, buffer.items);
         } else {
@@ -105,6 +104,10 @@ pub const Tokenizer = struct {
         var buffer = ArrayList(u8).init(std.heap.page_allocator);
         try self.bufferList.append(buffer);
         while (chrncmp(val, '"')) {
+            if (self.position > self.data.len) {
+                try std.io.getStdErr().writer().print("Invalid Json Detected: Unterminated String\n", .{});
+                std.process.exit(0);
+            }
             try buffer.append(val);
             val = self.advance();
         }
@@ -121,8 +124,11 @@ pub const Tokenizer = struct {
             val = self.advance();
         }
 
+        if (strcmp(buffer.items, "true") != true and strcmp(buffer.items, "false") != true) {
+            try std.io.getStdErr().writer().print("Invalid Json Detected: Wrong bool Values\n", .{});
+            std.process.exit(2);
+        }
         try self.add(.Boolean, buffer.items);
-
     }
 
     pub fn tokenize(self: *Tokenizer) !TokenList {
@@ -135,52 +141,59 @@ pub const Tokenizer = struct {
                 try self.tokenizeString();
             } else if (chrcmp('t', self.currentValue) or chrcmp('f', self.currentValue)) {
                 try self.tokenizeBool();
+                continue;
             } else {
-            switch (self.currentValue) {
-                '{' => {
-                    try self.add(.LeftBrace, res);
-                },
-                '}' => {
-                    try self.add(.RightBrace, res);
-                },
-                ':' => {
-                    try self.add(.Colon, res);
-                },
+                switch (self.currentValue) {
+                    '{' => {
+                        try self.add(.LeftBrace, res);
+                    },
+                    '}' => {
+                        try self.add(.RightBrace, res);
+                    },
+                    ':' => {
+                        try self.add(.Colon, res);
+                    },
 
-                '[' => {
-                    try self.add(.ArrLeftBracket, res);
-                },
-                ']' => {
-                    try self.add(.ArrRightBracket, res);
-                },
-                '\n' => {
-                    try self.add(.NewLine, res);
-                },
-                ',' => {
-                    try self.add(.Comma, res);
-                },
-                'n' => {
-                    var buffer = ArrayList(u8).init(std.heap.page_allocator);
-                   try self.bufferList.append(buffer);
-                    while(chrncmp(self.currentValue, ',')) {
-                        try buffer.append(self.currentValue);
-                        _ = self.advance();
-                    }
-                    std.debug.print("NULL: {s}\n", .{buffer.items});
-                    try self.add(.Null, buffer.items);
-                },
-                else => {
-                if(chrcmp(self.currentValue, '/')) {
-                    if(chrcmp(self.advance(), '/')) {
-                        while (self.currentValue != '\n') {
-                            _  = self.advance();
+                    '[' => {
+                        try self.add(.ArrLeftBracket, res);
+                    },
+                    ']' => {
+                        try self.add(.ArrRightBracket, res);
+                    },
+                    // '\n' => {
+                    //     try self.add(.NewLine, res);
+                    // },
+                    ',' => {
+                        try self.add(.Comma, res);
+                    },
+                    'n' => {
+                        var buffer = ArrayList(u8).init(std.heap.page_allocator);
+                        try self.bufferList.append(buffer);
+                        while (chrncmp(self.currentValue, ',')) {
+                            try buffer.append(self.currentValue);
+                            _ = self.advance();
                         }
-                    } else {
-                        std.process.exit(1);
-                    }
+                        try self.add(.Null, buffer.items);
+                        continue;
+                    },
+                    else => {
+                        if (ascii.isAlphanumeric(self.currentValue)) {
+                            try std.io.getStdErr().writer().print("Invalid Json Detected: Invalid String\n", .{});
+                            std.process.exit(1);
+                        }
+
+                        if (chrcmp(self.currentValue, '/')) {
+                            if (chrcmp(self.advance(), '/')) {
+                                while (self.currentValue != '\n') {
+                                    _ = self.advance();
+                                }
+                            } else {
+                                try std.io.getStdErr().writer().print("Invalid Json Detected: Invalid Comment\n", .{});
+                                std.process.exit(1);
+                            }
+                        }
+                    },
                 }
-                },
-            }
             }
             _ = self.advance();
         }

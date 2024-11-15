@@ -3,10 +3,10 @@ const Tokenizer = @import("./tokenizer.zig");
 const Token = Tokenizer.Token;
 const parseFloat = std.fmt.parseFloat;
 const parseInt = std.fmt.parseInt;
-const HashMap = std.StringArrayHashMap(JsonUnionType);
+pub const HashMap = std.StringArrayHashMap(JsonUnionType);
 const eql = std.mem.eql;
 const pga = std.heap.page_allocator;
-const JsonUnionType = union(enum) {
+pub const JsonUnionType = union(enum) {
     String: []u8,
     Map: HashMap,
     Array: []JsonUnionType,
@@ -47,14 +47,20 @@ pub const Parser = struct {
     fn advance(self: *Parser) Token {
         self.position += 1;
         // std.debug.print("Current Position: {d}\nCurrent Token: {any}\n\n", .{self.position, self.current.type});
-        if((self.position) < (self.tokenVals.items.len)) {
+        if ((self.position) < (self.tokenVals.items.len)) {
             self.current = self.tokenVals.items[self.position];
         }
         return self.current;
     }
     fn peek(self: *Parser) Token {
-        if((self.position + 1) < (self.tokenVals.items.len)) {
+        if ((self.position + 1) < (self.tokenVals.items.len)) {
             return self.tokenVals.items[self.position + 1];
+        }
+        return self.current;
+    }
+    fn peekNext(self: *Parser) Token {
+        if ((self.position + 1) < (self.tokenVals.items.len)) {
+            return self.tokenVals.items[self.position + 2];
         }
         return self.current;
     }
@@ -65,7 +71,6 @@ pub const Parser = struct {
             switch (self.current.type) {
                 .String => {
                     try arrayItems.append(JsonUnionType{ .String = self.current.value });
-
                 },
                 .Float => {
                     const number = try parseFloat(f64, self.current.value);
@@ -78,10 +83,14 @@ pub const Parser = struct {
                 .Boolean => {
                     try arrayItems.append(JsonUnionType{ .Boolean = strcmp(self.current.value, "true") });
                 },
-                else => {}
+                else => {},
             }
 
-            _ = self.advance();
+            if ((self.position + 1) < self.tokenVals.items.len) {
+                _ = self.advance();
+            } else {
+                break;
+            }
         }
         try jsonHashMap.put(key, .{ .Array = arrayItems.items });
     }
@@ -93,7 +102,8 @@ pub const Parser = struct {
         while (self.current.type != .RightBrace) {
             if (self.current.type == .String) {
                 key = self.current.value;
-                while (self.advance().type != .Comma) {
+                // Get the value
+                while (self.current.type != .Comma and self.current.type != .RightBrace) {
                     switch (self.current.type) {
                         .String => {
                             try jsonHashMap.put(key, .{ .String = self.current.value });
@@ -124,20 +134,22 @@ pub const Parser = struct {
                             // std.debug.print("Invalid ValueType: {any}\n", .{self.current.type});
                         },
                     }
-                    if(self.peek().type == .NewLine) {
+                    if (self.peek().type == .Comma) {
+                        if (self.peekNext().type == .RightBrace) {
+                            try std.io.getStdErr().writer().print("Invalid Json Detected: Last Comma Found\n\n", .{});
+                            std.process.exit(2);
+                        }
+                    }
+                    if (self.peek().type == .RightBrace) {
                         break;
                     }
+                    _ = self.advance();
                 }
-                //     } else {
-        //         std.process.exit(1);
-        //     }
-        }
+            } else {
+                try std.io.getStdErr().writer().print("Invalid Json Detected: Other Type Found -> {any}\n", .{self.current.type});
+                std.process.exit(2);
+            }
             _ = self.advance();
-        }
-        std.debug.print("Json Length: {d}\n\n", .{jsonHashMap.keys().len});
-        std.debug.print("Key\t->\tValue\n", .{});
-        for (jsonHashMap.keys()) |value| {
-            std.debug.print("{s}: {any}\n\n", .{value, jsonHashMap.get(value)});
         }
 
         return jsonHashMap;
